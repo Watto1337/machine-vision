@@ -18,29 +18,29 @@ import org.controlsfx.control.RangeSlider;
 
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
-import java.util.List;
 
 public class Main extends Application {
 
-    double hMin = 22.9;
-    double hMax = 221;
+    final static javafx.scene.paint.Color BLACK = javafx.scene.paint.Color.BLACK;
 
-    double sMin = 115;
-    double sMax = 195;
+    double hMin = 0;
+    double hMax = 0.2;
 
-    double bMin = 16;
-    double bMax = 101;
+    double sMin = 0;
+    double sMax = 0.4;
+
+    double bMin = 0.5;
+    double bMax = 1;
 
     float[] minColor = {(float)hMin, (float)sMin, (float)bMin};
     float[] maxColor = {(float)hMax, (float)sMax, (float)bMax};
 
-    double averageShadeMin = 0;
-    double averageShadeMax = 1;
-
     int outlinePrecision = 100;
 
+    int maxError = 10;
+
     BufferedImage image;
-    List<PixelGroup> lastGroups = new ArrayList<>();
+    ArrayList<PixelGroup> lastGroups = new ArrayList<>();
 
     long minTime = 1000 / 60;
 
@@ -60,81 +60,68 @@ public class Main extends Application {
 
                 Pixel[] allPixels = PixelValidator.loadPixelsFromImage(image);
 
+                Color firstPixelColor = allPixels[0].getColor();
+
+                float[] pixelHSB = Color.RGBtoHSB(firstPixelColor.getRed(), firstPixelColor.getGreen(), firstPixelColor.getBlue(), null);
+
+                //System.out.println(pixelHSB[0] + " " + pixelHSB[1] + " " + pixelHSB[2]);
+
                 Pixel[] validPixels = PixelValidator.validate(
                         allPixels,
                         pixel -> { return pixel.compareColor(minColor, maxColor); }
                 );
                 
-                final boolean objsOutline = showObjects.isSelected();
-                final boolean invalidDraw = drawInvalidObjects.isSelected();
-                final boolean monochromeDraw = monochromeInvalid.isSelected();
-                final double blockSize = minBlockSize.getValue();
-                final boolean drawPixels = draw.isSelected();
-                final boolean path = drawPath.isSelected();
-                List<PixelGroup> pixelGroups = objsOutline ? PixelGrouper.findPixelGroups(validPixels, 3) : new ArrayList<>();
+                //final boolean objsOutline = showObjects.isSelected();
+                //final boolean invalidDraw = drawInvalidObjects.isSelected();
+                //final boolean monochromeDraw = monochromeInvalid.isSelected();
+                //final double blockSize = minBlockSize.getValue();
+                //final boolean drawPixels = draw.isSelected();
+                //final boolean path = drawPath.isSelected();
+                ArrayList<PixelGroup> pixelGroups = PixelGrouper.findPixelGroups(validPixels, 3);
 
                 WritableImage drawnImage = new WritableImage(image.getWidth(), image.getHeight());
                 PixelWriter writer = drawnImage.getPixelWriter();
-                if (drawPixels) {
-                    int incrementAmount = 1;
-                    for (int i = 0, allPixelsLength = allPixels.length; i < allPixelsLength; i += incrementAmount) {
-                        Pixel pixel = allPixels[i];
-                        boolean accepted = validPixels[i] != null;
-                        if (accepted) {
-                            writer.setColor((int) pixel.getX(), (int) pixel.getY(), pixel.getColor());
-                        } else if (invalidDraw) {
-                            Color color;
-                            if (monochromeDraw) {
-                                color = pixel.getColor().grayscale();
-                            } else {
-                                color = pixel.getColor();
-                            }
-                            writer.setColor((int) pixel.getX(), (int) pixel.getY(), color);
-                        }
+
+                for (int i = 0; i < allPixels.length; i++) {
+                    Pixel pixel = allPixels[i];
+                    boolean accepted = validPixels[i] != null;
+
+                    int pixelColor = pixel.getColor().getRGB();
+
+                    javafx.scene.paint.Color color = javafx.scene.paint.Color.rgb((pixelColor >> 16) & 0xff, (pixelColor >> 8) & 0xff, pixelColor & 0xff);
+
+                    if (accepted) {
+                        writer.setColor((int) pixel.getX(), (int) pixel.getY(), color);
+                    } else {
+                        //writer.setColor((int) pixel.getX(), (int) pixel.getY(), color.grayscale());
                     }
                 }
-
 
                 Platform.runLater(() -> {
                     Canvas canvas = new Canvas(image.getWidth(), image.getHeight());
                     canvas.setScaleX(6);
                     canvas.setScaleY(6);
+
                     GraphicsContext context = canvas.getGraphicsContext2D();
                     context.drawImage(drawnImage, 0, 0);
+
                     pane.setCenter(canvas);
 
-                    context.setStroke(Color.rgb(255, 0, 255, 0.3));
                     for (PixelGroup group : pixelGroups) {
-                        List<Pixel> pixels = group.getPixels();
-                        if (pixels.size() > blockSize) {
-                            if (path) {
-                                PixelGroup matchingGroup = null;
-                                for (PixelGroup lastGroup : lastGroups) {
-                                    if (PixelGrouper.groupsMatch(group, lastGroup, 0.3, 25)) {
-                                        matchingGroup = lastGroup;
-                                        break;
-                                    }
-                                }
-                                if (matchingGroup != null) {
-                                    group.setPrevious(matchingGroup);
-                                    drawPath(context, group, 1, 10000);
-                                }
-                            }
-                            context.setFill(Color.rgb(0, 0, 0, 0.5));
+                        ArrayList<Pixel> pixels = group.getPixels();
+
+                        if (pixels.size() > 100) {
+                            context.setFill(BLACK);
                             //context.fillRect(group.getMinX(), group.getMinY(), group.getMaxX() - group.getMinX(), group.getMaxY() - group.getMinY());
 
-                            double centerX = group.getMinX() + (group.getMaxX() - group.getMinX()) / 2;
-                            double centerY = group.getMinY() + (group.getMaxY() - group.getMinY()) / 2;
+                            double centerX = group.getCenterX();
+                            double centerY = group.getCenterY();
 
-                            int[] minColor = {(int)yMin, (int)cbMin, (int)crMin};
-                            int[] maxColor = {(int)yMax, (int)cbMax, (int)crMax};
+                            double[][] groupOutline = group.getOutline(outlinePrecision, image, minColor, maxColor, maxError);
 
-                            double[][] groupOutline = GroupShape.getShape((int) centerX, (int) centerY, (int)group.getMinX(), (int)group.getMaxX(), (int)group.getMinY(), (int)group.getMaxY(), outlinePrecision, image, minColor, maxColor, (int)maxError.getValue());
+                            PixelGroup.smoothPolygon(groupOutline);
 
-                            GroupShape.smoothPolygon(groupOutline);
-
-                            context.setStroke(Color.BLACK);
-                            //context.fillPolygon(groupOutline[0], groupOutline[1], outlinePrecision);
+                            context.setStroke(BLACK);
                             context.strokePolygon(groupOutline[0], groupOutline[1], outlinePrecision);
                         }
                     }
@@ -158,13 +145,13 @@ public class Main extends Application {
     }
 
     private void drawPath(GraphicsContext context, PixelGroup group, int lineSize, int maxLines) {
-        double prevX = centerX(group);
-        double prevY = centerY(group);
+        double prevX = group.getCenterX();
+        double prevY = group.getCenterY();
         context.setLineWidth(lineSize);
         int i = 0;
         while (group != null) {
-            double x = centerX(group);
-            double y = centerY(group);
+            double x = group.getCenterX();
+            double y = group.getCenterY();
             context.strokeLine(prevX, prevY, x, y);
             prevX = x;
             prevY = y;
@@ -172,9 +159,4 @@ public class Main extends Application {
             if (++i >= maxLines) break;
         }
     }
-
-    private double centerX(PixelGroup group) { return (group.getMinX() + group.getMaxX()) / 2; }
-    private double centerY(PixelGroup group) { return (group.getMinY() + group.getMaxY()) / 2; }
-
-    private double averageShade(Color color) { return (color.getRed() + color.getGreen() + color.getBlue()) / 3D; }
 }

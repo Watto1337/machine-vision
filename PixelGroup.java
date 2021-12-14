@@ -139,9 +139,9 @@ public class PixelGroup {
         return maxY;
     }
 
-    private double getCenterX() { return (getMinX() + getMaxX()) / 2; }
+    public double getCenterX() { return (getMinX() + getMaxX()) / 2; }
 
-    private double getCenterY() { return (getMinY() + getMaxY()) / 2; }
+    public double getCenterY() { return (getMinY() + getMaxY()) / 2; }
 
     public PixelGroup getPrevious() {
         return previous;
